@@ -1,30 +1,26 @@
-use std::error::Error;
 use std::path::Path;
 
-use const_format::formatcp;
-use crate::help::OPTION_HELP_L;
-
-pub (crate) enum ArgsParsingResult {
+pub enum ArgsParsingResult {
     Built(Config),
     NeedHelp
 }
 
 #[derive(Debug)]
-pub(crate) struct Config {
+pub struct Config {
     search_expr: String,
     sources: Vec<Sources>,
     match_displaying_mode: MatchDisplayingMode
 }
 
 #[derive(Debug)]
-pub(crate) enum Sources {
+pub enum Sources {
     PlainText(String),
     FilePath(String),
     DirPath(String),
 }
 
 #[derive(Debug)]
-pub(crate) enum MatchDisplayingMode {
+pub enum MatchDisplayingMode {
     Up(usize),
     Around(usize),
     Down(usize)
@@ -32,8 +28,7 @@ pub(crate) enum MatchDisplayingMode {
 
 impl Config {
 
-    pub(crate)
-    fn parse_args<I>(args_iterator: I) -> Result<ArgsParsingResult, Box<dyn Error>>
+    pub fn parse_args<I>(args_iterator: I) -> Result<ArgsParsingResult, &'static str>
     where
         I: Iterator<Item=String>, {
         use ArgsParsingResult::*;
@@ -80,17 +75,17 @@ where
     I: Iterator<Item=String>, {
     use MatchDisplayingMode::*;
 
-    const ERR_MESSAGE: &str = formatcp!("You must provide lines count while using option -l.\n{OPTION_HELP_L}");
+    const ERR_MESSAGE: &str = "You must provide lines count while using option -l.";
 
     let str = args_iterator.next().ok_or(ERR_MESSAGE)?;
     let last_char = str.chars().nth_back(0).ok_or(ERR_MESSAGE)?;
 
     if last_char.is_alphabetic() {
         let parse_chars = &str[..str.len() - 1];
-        let count = parse_chars.parse::<usize>().map_err(|_| { ERR_MESSAGE })?;
+        let lines_count = parse_chars.parse::<usize>().map_err(|_| { ERR_MESSAGE })?;
         match last_char {
-            'u' => Ok(Up(count)),
-            'd' => Ok(Down(count)),
+            'u' => Ok(Up(lines_count)),
+            'd' => Ok(Down(lines_count)),
             _   => Err(ERR_MESSAGE)
         }
     } else {
@@ -98,16 +93,20 @@ where
     }
 }
 
-fn parse_source(arg: String) -> Result<Sources, Box<dyn Error>> {
+fn parse_source(arg: String) -> Result<Sources, &'static str> {
     use Sources::*;
+
     let path = Path::new(&arg);
-    if Path::try_exists(path)? {
-        if Path::is_dir(path) {
-            Ok(DirPath(arg))
-        } else {
-            Ok(FilePath(arg))
-        }
-    } else {
-        Ok(PlainText(arg))
+    let exists = Path::try_exists(path).unwrap_or_else(|_| {
+        eprintln!("Cannot stat fs. Path will be threaten as plain text.");
+        false
+    });
+
+    match exists {
+        true => match Path::is_dir(path) {
+            true  => Ok(DirPath(arg)),
+            false => Ok(FilePath(arg))
+        },
+        false => Ok(PlainText(arg))
     }
 }
