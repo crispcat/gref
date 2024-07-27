@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/picogrep.iml" filepath="$PROJECT_DIR$/.idea/picogrep.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/rsgrep.iml" filepath="$PROJECT_DIR$/.idea/rsgrep.iml" />
     </modules>
   </component>
 </project>

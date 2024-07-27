@@ -1,112 +1,160 @@
-use std::path::Path;
+use std::{
+    iter::Peekable,
+    path::Path
+};
+
+#[derive(Debug, Default)]
+pub struct Config {
+    pub search_expr:                      String,
+    pub sources:                          Vec<TextSource>,
+    pub groups_to_extract:                Vec<String>,          // -e
+    pub output_format:                    String,               // -f
+    pub verbose:                          bool,                 // -v
+    pub case_insensitive:                 bool,                 // -i
+    pub multiline:                        bool,                 // -m
+    pub dot_matches_new_line:             bool,                 // -s
+    pub swap_greed:                       bool,                 // -U
+    pub ignore_whitespace_and_comments:   bool,                 // -x
+    pub unicode:                          bool,                 // -u
+    pub debug_mode:                       bool                  // -d
+}
+
+#[derive(Debug)]
+pub enum TextSource {
+    PlainText(String),
+    FilePath(String),
+    DirPath(String),
+    Stdin
+}
 
 pub enum ArgsParsingResult {
     Built(Config),
     NeedHelp
 }
 
-#[derive(Debug)]
-pub struct Config {
-    search_expr: String,
-    sources: Vec<Sources>,
-    match_displaying_mode: MatchDisplayingMode
-}
-
-#[derive(Debug)]
-pub enum Sources {
-    PlainText(String),
-    FilePath(String),
-    DirPath(String),
-}
-
-#[derive(Debug)]
-pub enum MatchDisplayingMode {
-    Up(usize),
-    Around(usize),
-    Down(usize)
-}
-
 impl Config {
 
-    pub fn parse_args<I>(args_iterator: I) -> Result<ArgsParsingResult, &'static str>
+    pub fn parse_args<I>(args_iterator: Peekable<I>) -> Result<ArgsParsingResult, Vec<String>>
     where
-        I: Iterator<Item=String>, {
+        I: Iterator<Item=String>,
+    {
         use ArgsParsingResult::*;
+        use TextSource::*;
 
+        let mut errors = vec![];
+
+        let mut config = Config::default();
         let mut search_expr: Option<String> = None;
-        let mut sources = Vec::<Sources>::new();
-        let mut match_displaying_mode: Option<MatchDisplayingMode> = None;
+        let mut output_format: Option<String> = None;
+        let mut args_iterator = args_iterator.skip(1).peekable();
 
-        let mut args_iterator = args_iterator.skip(1);
-
-        while let Some(arg) = args_iterator.next() {
+        while let Some(arg) = args_iterator.peek() {
             match arg.as_str() {
                 "-h" => {
                     return Ok(NeedHelp)
                 },
-                "-l" => {
-                    match_displaying_mode = Some(parse_match_displaying_mode(&mut args_iterator)?)
+                "-e" => {
+                    match parse_param_value(&mut args_iterator) {
+                        Ok(val) => config.groups_to_extract.push(val),
+                        Err(er) => errors.push(er)
+                    }
+                },
+                "-f" => {
+                    match parse_param_value(&mut args_iterator) {
+                        Ok(val) => output_format = Some(val),
+                        Err(er) => errors.push(er)
+                    }
+                },
+                "-p" => {
+                    if let Ok(val) = parse_param_value(&mut args_iterator)
+                        .map_err(|e| errors.push(e)) {
+                        config.sources.push(PlainText(val))
+                    }
+                },
+                "-v" => {
+                    config.verbose = args_iterator.next().unwrap().map(|| true);
+                },
+                "-i" => {
+                    config.case_insensitive = args_iterator.next().unwrap().map(|| true)
+                },
+                "-m" => {
+                    config.multiline = args_iterator.next().unwrap().map(|| true)
+                },
+                "-s" => {
+                    config.dot_matches_new_line = args_iterator.next().unwrap().map(|| true)
+                },
+                "-U" => {
+                    config.swap_greed = args_iterator.next().unwrap().map(|| true)
+                },
+                "-x" => {
+                    config.ignore_whitespace_and_comments = args_iterator.next().unwrap().map(|| true)
+                },
+                "-u" => {
+                    config.unicode = args_iterator.next().unwrap().map(|| true)
+                },
+                "-d" => {
+                    config.debug_mode = args_iterator.next().unwrap().map(|| true)
                 },
                 _ => {
+                    let arg = args_iterator.next().unwrap();
+                    if arg.starts_with('-') {
+                        errors.push(format!("Incorrect option {arg}. \
+                        If you want to use {arg} as search expression \
+                        you can force it to be treated as regex using \"({arg})\"."));
+                        continue;
+                    }
                     match search_expr {
-                        None    => { search_expr = Some(arg) }
-                        Some(_) => { sources.push(parse_source(arg)?) }
+                        None    => search_expr = Some(arg),
+                        Some(_) => match stat_fs_source(arg) {
+                            Ok(source) => config.sources.push(source),
+                            Err(error) => errors.push(error)
+                        }
                     }
                 }
             }
         }
 
-        let search_expr = search_expr
-            .ok_or("Insufficient arguments. You must provide at least a search expression.")?;
-
-        let match_displaying_mode = match_displaying_mode
-            .unwrap_or(MatchDisplayingMode::Around(4));
-
-        Ok(Built(Config {
-            search_expr,
-            sources,
-            match_displaying_mode,
-        }))
-    }
-}
-
-fn parse_match_displaying_mode<I>(args_iterator: &mut I) -> Result<MatchDisplayingMode, &'static str>
-where
-    I: Iterator<Item=String>, {
-    use MatchDisplayingMode::*;
-
-    const ERR_MESSAGE: &str = "You must provide lines count while using option -l.";
-
-    let str = args_iterator.next().ok_or(ERR_MESSAGE)?;
-    let last_char = str.chars().nth_back(0).ok_or(ERR_MESSAGE)?;
-
-    if last_char.is_alphabetic() {
-        let parse_chars = &str[..str.len() - 1];
-        let lines_count = parse_chars.parse::<usize>().map_err(|_| { ERR_MESSAGE })?;
-        match last_char {
-            'u' => Ok(Up(lines_count)),
-            'd' => Ok(Down(lines_count)),
-            _   => Err(ERR_MESSAGE)
+        match search_expr {
+            Some(expr) => config.search_expr = expr,
+            None => errors.push(String::from("Insufficient arguments. \
+                You must provide at least a search expression."))
         }
-    } else {
-        Ok(Around(str.parse::<usize>().map_err(|_| { ERR_MESSAGE })?))
+
+        config.output_format = output_format.unwrap_or(String::from("{0}"));
+        config.sources.push(Stdin);
+
+        if errors.len() == 0 {
+            Ok(Built(config))
+        } else {
+            Err(errors)
+        }
     }
 }
 
-fn parse_source(arg: String) -> Result<Sources, &'static str> {
-    use Sources::*;
+fn parse_param_value<I>(args_iterator: &mut Peekable<I>) -> Result<String, String>
+where
+    I: Iterator<Item=String>,
+{
+    let key = args_iterator.next();
+    let error_message = format!("You must provide a value when using option {key}");
 
+    let arg = args_iterator.peek().ok_or(&error_message)?;
+    if arg.starts_with('-') {
+        return Err(error_message);
+    }
+
+    Ok(args_iterator.next().unwrap())
+}
+
+fn stat_fs_source(arg: String) -> Result<TextSource, String> {
+    use TextSource::*;
     let path = Path::new(&arg);
-    let exists = Path::try_exists(path).unwrap_or_else(|_| {
-        eprintln!("Cannot stat fs. Path will be threaten as plain text.");
-        false
-    });
-
+    let exists = Path::try_exists(path).map_err(|e| { format!("Cannot stat fs.\n{e}") })?;
     match exists {
         true => match Path::is_dir(path) {
             true  => Ok(DirPath(arg)),
             false => Ok(FilePath(arg))
-        },
-        false => Ok(PlainText(arg))
+        }
+        false => Err(format!("File or directory {arg} is not exist!"))
     }
 }
