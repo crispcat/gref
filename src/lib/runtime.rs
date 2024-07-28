@@ -86,7 +86,11 @@ pub fn run(config: Config) -> RunResult {
         worker.join().unwrap().unwrap_or_else(|e| errors.push(e));
     }
 
-    Ok(())
+    if errors.len() != 0 {
+        Err(errors)
+    } else {
+        Ok(())
+    }
 }
 
 fn go_worker(shared_state: Arc<SharedState>) -> Result<(), RuntimeError> {
