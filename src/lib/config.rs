@@ -1,6 +1,9 @@
 use std::{
     iter::Peekable,
-    path::Path
+    path::Path,
+    num::NonZeroUsize,
+    str::FromStr,
+    thread::available_parallelism
 };
 
 #[derive(Debug, Default)]
@@ -9,6 +12,7 @@ pub struct Config {
     pub sources:                          Vec<TextSource>,
     pub groups_to_extract:                Vec<String>,          // -e
     pub output_format:                    String,               // -f
+    pub threads:                          usize,                // -t
     pub verbose:                          bool,                 // -v
     pub case_insensitive:                 bool,                 // -i
     pub multiline:                        bool,                 // -m
@@ -27,18 +31,21 @@ pub enum TextSource {
     Stdin
 }
 
-pub enum ArgsParsingResult {
+pub enum ConfigParsingResult {
     Built(Config),
     NeedHelp
 }
 
+type ConfigError = String;
+pub type ConfigErrors = Vec<String>;
+
 impl Config {
 
-    pub fn parse_args<I>(args_iterator: Peekable<I>) -> Result<ArgsParsingResult, Vec<String>>
+    pub fn parse_args<I>(args_iterator: Peekable<I>) -> Result<ConfigParsingResult, ConfigErrors>
     where
         I: Iterator<Item=String>,
     {
-        use ArgsParsingResult::*;
+        use ConfigParsingResult::*;
         use TextSource::*;
 
         let mut errors = vec![];
@@ -46,6 +53,7 @@ impl Config {
         let mut config = Config::default();
         let mut search_expr: Option<String> = None;
         let mut output_format: Option<String> = None;
+        let mut threads_count: Option<NonZeroUsize> = None;
         let mut args_iterator = args_iterator.skip(1).peekable();
 
         while let Some(arg) = args_iterator.peek() {
@@ -66,34 +74,40 @@ impl Config {
                     }
                 },
                 "-p" => {
-                    if let Ok(val) = parse_param_value(&mut args_iterator)
-                        .map_err(|e| errors.push(e)) {
-                        config.sources.push(PlainText(val))
+                    match parse_param_value(&mut args_iterator) {
+                        Ok(val) => config.sources.push(PlainText(val)),
+                        Err(er) => errors.push(er)
+                    }
+                },
+                "-t" => {
+                    match parse_param_value(&mut args_iterator) {
+                        Ok(val) => threads_count = Some(val),
+                        Err(er) => errors.push(er)
                     }
                 },
                 "-v" => {
-                    config.verbose = args_iterator.next().unwrap().map(|| true);
+                    config.verbose = args_iterator.next().map(|_| true).unwrap()
                 },
                 "-i" => {
-                    config.case_insensitive = args_iterator.next().unwrap().map(|| true)
+                    config.case_insensitive = args_iterator.next().map(|_| true).unwrap()
                 },
                 "-m" => {
-                    config.multiline = args_iterator.next().unwrap().map(|| true)
+                    config.multiline = args_iterator.next().map(|_| true).unwrap()
                 },
                 "-s" => {
-                    config.dot_matches_new_line = args_iterator.next().unwrap().map(|| true)
+                    config.dot_matches_new_line = args_iterator.next().map(|_| true).unwrap()
                 },
                 "-U" => {
-                    config.swap_greed = args_iterator.next().unwrap().map(|| true)
+                    config.swap_greed = args_iterator.next().map(|_| true).unwrap()
                 },
                 "-x" => {
-                    config.ignore_whitespace_and_comments = args_iterator.next().unwrap().map(|| true)
+                    config.ignore_whitespace_and_comments = args_iterator.next().map(|_| true).unwrap()
                 },
                 "-u" => {
-                    config.unicode = args_iterator.next().unwrap().map(|| true)
+                    config.unicode = args_iterator.next().map(|_| true).unwrap()
                 },
                 "-d" => {
-                    config.debug_mode = args_iterator.next().unwrap().map(|| true)
+                    config.debug_mode = args_iterator.next().map(|_| true).unwrap()
                 },
                 _ => {
                     let arg = args_iterator.next().unwrap();
@@ -120,6 +134,13 @@ impl Config {
                 You must provide at least a search expression."))
         }
 
+        // TODO: come with more stable and perfomant thread spawning strategy
+        config.threads = threads_count
+            .unwrap_or(available_parallelism()
+                .unwrap_or(NonZeroUsize::new(1)
+                    .unwrap()))
+            .get();
+
         config.output_format = output_format.unwrap_or(String::from("{0}"));
         config.sources.push(Stdin);
 
@@ -131,11 +152,12 @@ impl Config {
     }
 }
 
-fn parse_param_value<I>(args_iterator: &mut Peekable<I>) -> Result<String, String>
+fn parse_param_value<I, T>(args_iterator: &mut Peekable<I>) -> Result<T, ConfigError>
 where
     I: Iterator<Item=String>,
+    T: FromStr
 {
-    let key = args_iterator.next();
+    let key = args_iterator.next().unwrap();
     let error_message = format!("You must provide a value when using option {key}");
 
     let arg = args_iterator.peek().ok_or(&error_message)?;
@@ -143,10 +165,11 @@ where
         return Err(error_message);
     }
 
-    Ok(args_iterator.next().unwrap())
+    let val = args_iterator.next().unwrap();
+    val.parse::<T>().map_err(|_| format!("Cannot parse value {val} of argument {key}"))
 }
 
-fn stat_fs_source(arg: String) -> Result<TextSource, String> {
+fn stat_fs_source(arg: String) -> Result<TextSource, ConfigError> {
     use TextSource::*;
     let path = Path::new(&arg);
     let exists = Path::try_exists(path).map_err(|e| { format!("Cannot stat fs.\n{e}") })?;

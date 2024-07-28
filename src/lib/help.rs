@@ -30,6 +30,7 @@ OPTIONS BRIEF:\n\
 \t-x  -  Ignore whitespace and comments: Allows the use of whitespace and comments inside the regex pattern for clarity.\n\
 \t-u  -  Unicode: Enables full Unicode support, including support for Unicode properties like \\p{{Letter}} and \\p{{L}}.\n\
 \t-p  -  Pass text from command line as a source for a search.\n\
+\t-t  -  Do work in n-th threads.
 \t-d  -  Debug mode.\n\
 \n\
 EXAMPLES:\n\

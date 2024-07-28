@@ -1,10 +1,13 @@
 mod lib;
 
-use crate::lib::{
-    help::HELP,
-    config::{
-        Config,
-        ArgsParsingResult::*
+use crate::{
+    lib::{
+        help::HELP,
+        config::{
+            Config,
+            ConfigErrors,
+            ConfigParsingResult::*,
+        }
     }
 };
 
@@ -30,7 +33,7 @@ fn main() {
     }
 }
 
-fn report_parsing_errors(errs: Vec<String>) -> ! {
+fn report_parsing_errors(errs: ConfigErrors) -> ! {
     for err in errs {
         eprintln!("Error parsing arguments: {err}");
     }
