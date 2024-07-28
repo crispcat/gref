@@ -83,7 +83,7 @@ pub fn run(config: Config) -> RunResult {
 
     shared_state.jobs.wait_for_all_done();
     for worker in workers {
-        _ = worker.join().unwrap().map(|e| errors.push(e));
+        worker.join().unwrap().unwrap_or_else(|e| errors.push(e));
     }
 
     Ok(())

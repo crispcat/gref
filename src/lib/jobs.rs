@@ -47,8 +47,11 @@ where T: Sized {
         }
 
         if jobs.started == jobs.done {
-            None // no jobs had been announced and all jobs was done
+            // no new jobs was announced and all started jobs are done
+            // thread must finish gracefully
+            None
         } else {
+            // start job -> move new job into worker thread context
             jobs.started = jobs.started.wrapping_add(1);
             let job = jobs.data.pop().unwrap();
             Some(job)
@@ -63,7 +66,7 @@ where T: Sized {
 
     pub fn done_one(&mut self) {
         let mut jobs = self.jobs.lock().unwrap();
-        jobs.done += 1;
+        jobs.done = jobs.done.wrapping_add(1);
         if jobs.started == jobs.done {
             self.job_announce.notify_all();
             self.done_jobs.notify_all();
