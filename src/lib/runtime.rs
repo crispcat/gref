@@ -1,5 +1,4 @@
 use std::{
-    io::Read,
     sync::{
         Arc,
         Mutex
@@ -12,31 +11,33 @@ use regex::bytes::{
 };
 
 use crate::{
-    lib::config::{
-        Config,
-        TextSource
-    },
-    lib::jobs::JobsChan,
+    lib::{
+        jobs::JobsChan,
+        config::{
+            Config,
+            TextSource,
+        }
+    }
 };
 
 pub struct SearchResult {
-    line : usize,
-    position : usize,
-    needle : String,
-    haystack : TextSource
+    line: usize,
+    position: usize,
+    needle: String,
+    haystack: Arc<TextSource>
 }
 
-enum Jobs {
-    ParseStdin,
-    ParseDir(String),
-    ParseFile(String),
-    SearchString(String)
+enum RuntimeJob {
+    Iterate(Arc<TextSource>),
+    SearchInString(String),
+    FormatResult(String)
 }
 
-struct SharedState {
+struct Runtime {
     regex: Regex,
-    jobs : JobsChan<Jobs>,
-    results : Mutex<Vec<SearchResult>>
+    config: Config,
+    jobs: JobsChan<RuntimeJob>,
+    results: Mutex<Vec<SearchResult>>,
 }
 
 type RuntimeError = String;
@@ -45,6 +46,7 @@ type RunResult = Result<(), Vec<RuntimeError>>;
 const DEFAULT_CHAN_CAPACITY: usize = 4096;
 
 pub fn run(config: Config) -> RunResult {
+    use RuntimeJob::*;
 
     let mut errors = vec![];
 
@@ -63,25 +65,24 @@ pub fn run(config: Config) -> RunResult {
         Err(e) => return Err(vec![format!("Regex parsing error: {e}")])
     };
 
-    let shared_state = Arc::new(SharedState {
+    let runtime = Arc::new(Runtime {
         regex,
+        config,
         results: Mutex::new(vec![]),
-        jobs: JobsChan::<Jobs>::with_capacity(DEFAULT_CHAN_CAPACITY),
+        jobs: JobsChan::<RuntimeJob>::with_capacity(DEFAULT_CHAN_CAPACITY),
     });
 
-    // todo: schedule initial jobs
-
-    let mut workers = vec![];
-
-    for t in 0..config.threads {
-        let shared_state = Arc::clone(&shared_state);
-        workers.push(std::thread::spawn(move || go_worker(shared_state)))
+    for source in &runtime.config.sources {
+        runtime.jobs.announce_one(Iterate(Arc::clone(source)));
     }
 
-    // todo: collect results and write throw mpsc chan
-    // todo: or return runtime object with chan and handles to wait threads
+    let mut workers = vec![];
+    for _ in 0..runtime.config.threads {
+        let runtime = Arc::clone(&runtime);
+        workers.push(std::thread::spawn(move || go_search_worker(runtime)))
+    }
 
-    shared_state.jobs.wait_for_all_done();
+    runtime.jobs.wait_for_all_done();
     for worker in workers {
         worker.join().unwrap().unwrap_or_else(|e| errors.push(e));
     }
@@ -93,7 +94,7 @@ pub fn run(config: Config) -> RunResult {
     }
 }
 
-fn go_worker(shared_state: Arc<SharedState>) -> Result<(), RuntimeError> {
-    use Jobs::*;
+fn go_search_worker(shared_state: Arc<Runtime>) -> Result<(), RuntimeError> {
+    use RuntimeJob::*;
     todo!()
 }

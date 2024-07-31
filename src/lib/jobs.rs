@@ -23,11 +23,6 @@ where T: Sized {
 impl<T> JobsChan<T>
 where T: Sized {
 
-    // new job can be announced (jobs.data.push(job)) by worker thread between wait_for_job_announcement (jobs.started++) and done_one (jobs.done++) calls
-    // then other worker thread will grab announced job and do it, and it can announce more jobs during working on that job
-    // so, in that way jobs.started is always +1 greater if at least one worker is doing a task
-    // and jobs.started == jobs.finished otherwise
-
     pub fn with_capacity(buffer_size: usize) -> JobsChan<T> {
         JobsChan {
             jobs: Mutex::new(JobsData {
@@ -40,6 +35,11 @@ where T: Sized {
         }
     }
 
+    // new job can be announced (jobs.data.push(job)) by worker thread between wait_for_job_announcement (jobs.started++) and done_one (jobs.done++) calls
+    // then other worker thread will grab announced job and do it, and it can announce more jobs during working on that job
+    // so, in that way jobs.started is always +1 greater if at least one worker is doing a task
+    // and jobs.started == jobs.finished otherwise
+
     pub fn wait_for_job_announcement(&self) -> Option<T> {
         let mut jobs = self.jobs.lock().unwrap();
         while jobs.data.len() == 0 && jobs.started != jobs.done {
@@ -48,23 +48,23 @@ where T: Sized {
 
         if jobs.started == jobs.done {
             // no new jobs was announced and all started jobs are done
-            // thread must finish gracefully
+            // thread must finish gracefully now
             None
         } else {
-            // start job -> move new job into worker thread context
+            // start a new job and move it into worker thread context
             jobs.started = jobs.started.wrapping_add(1);
             let job = jobs.data.pop().unwrap();
             Some(job)
         }
     }
 
-    pub fn announce_one(&mut self, job: T) {
+    pub fn announce_one(&self, job: T) {
         let mut jobs = self.jobs.lock().unwrap();
         jobs.data.push(job);
         self.job_announce.notify_one();
     }
 
-    pub fn done_one(&mut self) {
+    pub fn done_one(&self) {
         let mut jobs = self.jobs.lock().unwrap();
         jobs.done = jobs.done.wrapping_add(1);
         if jobs.started == jobs.done {

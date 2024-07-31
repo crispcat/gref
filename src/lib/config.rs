@@ -1,15 +1,21 @@
 use std::{
-    iter::Peekable,
+    sync::Arc,
     path::Path,
-    num::NonZeroUsize,
     str::FromStr,
-    thread::available_parallelism
+    iter::Peekable,
+    num::NonZeroUsize,
+    thread::available_parallelism,
 };
+
+pub type PathString = String;
+pub type ConfigError = String;
+pub type ConfigErrors = Vec<ConfigError>;
+
 
 #[derive(Debug, Default)]
 pub struct Config {
     pub search_expr:                      String,
-    pub sources:                          Vec<TextSource>,
+    pub sources:                          Vec<Arc<TextSource>>,
     pub groups_to_extract:                Vec<String>,          // -e
     pub output_format:                    String,               // -f
     pub threads:                          usize,                // -t
@@ -26,8 +32,8 @@ pub struct Config {
 #[derive(Debug)]
 pub enum TextSource {
     PlainText(String),
-    FilePath(String),
-    DirPath(String),
+    FilePath(PathString),
+    DirPath(PathString),
     Stdin
 }
 
@@ -35,9 +41,6 @@ pub enum ConfigParsingResult {
     Built(Config),
     NeedHelp
 }
-
-type ConfigError = String;
-pub type ConfigErrors = Vec<String>;
 
 impl Config {
 
@@ -75,7 +78,7 @@ impl Config {
                 },
                 "-p" => {
                     match parse_param_value(&mut args_iterator) {
-                        Ok(val) => config.sources.push(PlainText(val)),
+                        Ok(val) => config.sources.push(Arc::new(PlainText(val))),
                         Err(er) => errors.push(er)
                     }
                 },
@@ -120,7 +123,7 @@ impl Config {
                     match search_expr {
                         None    => search_expr = Some(arg),
                         Some(_) => match stat_fs_source(arg) {
-                            Ok(source) => config.sources.push(source),
+                            Ok(source) => config.sources.push(Arc::new(source)),
                             Err(error) => errors.push(error)
                         }
                     }
@@ -137,12 +140,11 @@ impl Config {
         // TODO: come with more stable and perfomant thread spawning strategy
         config.threads = threads_count
             .unwrap_or(available_parallelism()
-                .unwrap_or(NonZeroUsize::new(1)
-                    .unwrap()))
+                .unwrap_or(NonZeroUsize::new(1).unwrap()))
             .get();
 
         config.output_format = output_format.unwrap_or(String::from("{0}"));
-        config.sources.push(Stdin);
+        config.sources.push(Arc::new(Stdin));
 
         if errors.len() == 0 {
             Ok(Built(config))
