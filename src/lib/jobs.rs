@@ -37,10 +37,10 @@ where T: Sized {
 
     // new job can be announced (jobs.data.push(job)) by worker thread between wait_for_job_announcement (jobs.started++) and done_one (jobs.done++) calls
     // then other worker thread will grab announced job and do it, and it can announce more jobs during working on that job
-    // so, in that way jobs.started is always +1 greater if at least one worker is doing a task
+    // so, in that way jobs.started is always at least +1 greater if at least one worker is doing a task
     // and jobs.started == jobs.finished otherwise
 
-    pub fn wait_for_job_announcement(&self) -> Option<T> {
+    pub fn wait_for_one(&self) -> Option<JobHandler<T>> {
         let mut jobs = self.jobs.lock().unwrap();
         while jobs.data.len() == 0 && jobs.started != jobs.done {
             jobs = self.job_announce.wait(jobs).unwrap();
@@ -48,13 +48,13 @@ where T: Sized {
 
         if jobs.started == jobs.done {
             // no new jobs was announced and all started jobs are done
-            // thread must finish gracefully now
+            // worker thread must now finish gracefully
             None
         } else {
             // start a new job and move it into worker thread context
             jobs.started = jobs.started.wrapping_add(1);
             let job = jobs.data.pop().unwrap();
-            Some(job)
+            Some(JobHandler::<T>(job, self))
         }
     }
 
@@ -78,5 +78,20 @@ where T: Sized {
         while jobs.data.len() != 0 || jobs.started != jobs.done {
             jobs = self.done_jobs.wait(jobs).unwrap();
         }
+    }
+}
+
+pub struct JobHandler<'a, T>(T, &'a JobsChan<T>)
+where T: Sized;
+
+impl<T> JobHandler<'_, T> {
+    pub fn job(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> Drop for JobHandler<'_, T> {
+    fn drop(&mut self) {
+        self.1.done_one()
     }
 }

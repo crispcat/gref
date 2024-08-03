@@ -5,7 +5,6 @@ use crate::{
         help::HELP,
         config::{
             Config,
-            ConfigErrors,
             ConfigParsingResult::*,
         }
     }
@@ -16,6 +15,7 @@ use std::{
     process,
     error::Error
 };
+use crate::lib::runtime::run;
 
 fn main() {
 
@@ -31,13 +31,20 @@ fn main() {
     if config.debug_mode {
         dbg!(config);
     }
+
+    run(config).unwrap_or_else(report_runtime_error)
 }
 
-fn report_parsing_errors(errs: ConfigErrors) -> ! {
+fn report_parsing_errors(errs: Vec<anyhow::Error>) -> ! {
     for err in errs {
         eprintln!("Error parsing arguments: {err}");
     }
     eprintln!("Use -h to see help.");
+    process::exit(1);
+}
+
+fn report_runtime_error(err: anyhow::Error) {
+    eprintln!("Runtime error in the main thread: {err}");
     process::exit(1);
 }
 

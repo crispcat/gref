@@ -1,5 +1,4 @@
 use std::{
-    sync::Arc,
     path::Path,
     str::FromStr,
     iter::Peekable,
@@ -7,15 +6,18 @@ use std::{
     thread::available_parallelism,
 };
 
-pub type PathString = String;
-pub type ConfigError = String;
-pub type ConfigErrors = Vec<ConfigError>;
+use anyhow::{
+    Context,
+    bail,
+    anyhow
+};
 
+pub type PathString = String;
 
 #[derive(Debug, Default)]
 pub struct Config {
     pub search_expr:                      String,
-    pub sources:                          Vec<Arc<TextSource>>,
+    pub sources:                          Vec<TextSource>,
     pub groups_to_extract:                Vec<String>,          // -e
     pub output_format:                    String,               // -f
     pub threads:                          usize,                // -t
@@ -44,7 +46,7 @@ pub enum ConfigParsingResult {
 
 impl Config {
 
-    pub fn parse_args<I>(args_iterator: Peekable<I>) -> Result<ConfigParsingResult, ConfigErrors>
+    pub fn parse_args<I>(args_iterator: Peekable<I>) -> Result<ConfigParsingResult, Vec<anyhow::Error>>
     where
         I: Iterator<Item=String>,
     {
@@ -78,7 +80,7 @@ impl Config {
                 },
                 "-p" => {
                     match parse_param_value(&mut args_iterator) {
-                        Ok(val) => config.sources.push(Arc::new(PlainText(val))),
+                        Ok(val) => config.sources.push(PlainText(val)),
                         Err(err) => errors.push(err)
                     }
                 },
@@ -123,7 +125,7 @@ impl Config {
                 _ => {
                     let arg = args_iterator.next().unwrap();
                     if arg.starts_with('-') {
-                        errors.push(format!("Incorrect option {arg}. \
+                        errors.push(anyhow!("Incorrect option {arg}. \
                         If you want to use {arg} as search expression \
                         you can force it to be treated as regex using \"({arg})\"."));
                         continue;
@@ -131,7 +133,7 @@ impl Config {
                     match search_expr {
                         None => search_expr = Some(arg),
                         Some(_) => match stat_fs_source(arg) {
-                            Ok(source) => config.sources.push(Arc::new(source)),
+                            Ok(source) => config.sources.push(source),
                             Err(err) => errors.push(err)
                         }
                     }
@@ -141,7 +143,7 @@ impl Config {
 
         match search_expr {
             Some(expr) => config.search_expr = expr,
-            None => errors.push(String::from("Insufficient arguments. \
+            None => errors.push(anyhow!("Insufficient arguments. \
                 You must provide at least a search expression."))
         }
 
@@ -152,7 +154,7 @@ impl Config {
             .get();
 
         config.output_format = output_format.unwrap_or(String::from("{0}"));
-        config.sources.push(Arc::new(Stdin));
+        config.sources.push(Stdin);
 
         if errors.len() == 0 {
             Ok(Built(config))
@@ -162,32 +164,32 @@ impl Config {
     }
 }
 
-fn parse_param_value<I, T>(args_iterator: &mut Peekable<I>) -> Result<T, ConfigError>
+fn parse_param_value<I, T>(args_iterator: &mut Peekable<I>) -> anyhow::Result<T>
 where
     I: Iterator<Item=String>,
     T: FromStr
 {
     let key = args_iterator.next().unwrap();
-    let error_message = format!("You must provide a value when using option {key}");
+    let error_message = || format!("You must provide a value when using option {key}");
 
-    let arg = args_iterator.peek().ok_or(&error_message)?;
+    let arg = args_iterator.peek().with_context(error_message)?;
     if arg.starts_with('-') {
-        return Err(error_message);
+        bail!(error_message());
     }
 
     let val = args_iterator.next().unwrap();
-    val.parse::<T>().map_err(|_| format!("Cannot parse value {val} of argument {key}"))
+    val.parse::<T>().map_err(|_| anyhow!("Cannot parse value {val} of argument {key}"))
 }
 
-fn stat_fs_source(arg: String) -> Result<TextSource, ConfigError> {
+fn stat_fs_source(arg: String) -> anyhow::Result<TextSource> {
     use TextSource::*;
     let path = Path::new(&arg);
-    let exists = Path::try_exists(path).map_err(|e| { format!("Cannot stat fs.\n{e}") })?;
+    let exists = Path::try_exists(path).map_err(|e| anyhow!("Cannot stat fs.\n{e}"))?;
     match exists {
         true => match Path::is_dir(path) {
             true => Ok(DirPath(arg)),
             false => Ok(FilePath(arg))
         }
-        false => Err(format!("File or directory {arg} is not exist!"))
+        false => bail!("File or directory {arg} is not exist!")
     }
 }
