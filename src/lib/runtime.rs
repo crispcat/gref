@@ -33,7 +33,7 @@ pub struct SearchResult<'a> {
 }
 
 enum RuntimeJob<'a> {
-    FeedText(&'a TextSource),
+    ConsumeText(&'a TextSource),
     Search(SearchRequest<'a>),
     Format(SearchResult<'a>)
 }
@@ -64,22 +64,24 @@ pub fn run(config: Config) -> Result<(), anyhow::Error> {
     let runtime = Runtime { regex, config, jobs_chan };
 
     for source in &runtime.config.sources {
-        runtime.jobs_chan.announce_one(FeedText(source));
+        runtime.jobs_chan.announce_one(ConsumeText(source));
     }
 
     std::thread::scope(|s| {
-        for _ in 0..runtime.config.threads { s.spawn(|| worker_go(&runtime)); }
+        for _ in 0..runtime.config.threads {
+            s.spawn(|| worker_go(&runtime));
+        }
         runtime.jobs_chan.wait_for_all_done();
     });
 
     Ok(())
 }
 
-fn worker_go(runtime: &Runtime) {
+fn worker_go<'a>(runtime: &'a Runtime<'a>) {
     use RuntimeJob::*;
     while let Some(job_handler) = runtime.jobs_chan.wait_for_one() {
         let job_result = match job_handler.job() {
-            FeedText(source) => job_feed_text_source(source, runtime),
+            ConsumeText(source) => job_consume_text_source(source, runtime),
             Search(request) => job_search_in_string(request, runtime),
             Format(result) => job_format_result(result, runtime)
         };
@@ -87,21 +89,21 @@ fn worker_go(runtime: &Runtime) {
     }
 }
 
-fn job_feed_text_source<'a>(source: &'a TextSource, runtime: &'a Runtime<'a>) -> Result<(), anyhow::Error> {
+fn job_consume_text_source<'a>(source: &'a TextSource, runtime: &'a Runtime<'a>) -> Result<(), anyhow::Error> {
     use RuntimeJob::*;
     match source {
         TextSource::DirPath(path) => {
 
         },
         source => {
+            let mut line = 0usize;
             let mut text_reader = text_reader_wrap(source, runtime.config.multiline)
                 .map_err(|e| anyhow!("Failed to create reader for source \"{source:?}\":{e}"))?;
-            let mut line = 0usize;
             loop {
                 let mut haystack = String::new();
                 match text_reader.read_string_to_buff(&mut haystack) {
                     Ok(0) => break,
-                    Ok(_) => {
+                    Ok(_bytes_read) => {
                         let job = Search(SearchRequest { haystack, source, line } );
                         runtime.jobs_chan.announce_one(job);
                     }

@@ -29,7 +29,7 @@ fn main() {
     };
 
     if config.debug_mode {
-        dbg!(config);
+        dbg!(&config);
     }
 
     run(config).unwrap_or_else(report_runtime_error)

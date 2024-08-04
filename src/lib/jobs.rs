@@ -46,7 +46,7 @@ where T: Sized {
             jobs = self.job_announce.wait(jobs).unwrap();
         }
 
-        if jobs.started == jobs.done {
+        if jobs.started == jobs.done && jobs.data.len() == 0 {
             // no new jobs was announced and all started jobs are done
             // worker thread must now finish gracefully
             None
