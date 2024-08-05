@@ -42,11 +42,10 @@ where T: Sized {
 
     pub fn wait_for_one(&self) -> Option<JobHandler<T>> {
         let mut jobs = self.jobs.lock().unwrap();
-        while jobs.data.len() == 0 && jobs.started != jobs.done {
+        while jobs.data.len() == 0 && (jobs.started != jobs.done || jobs.started == 0) {
             jobs = self.job_announce.wait(jobs).unwrap();
         }
-
-        if jobs.data.len() == 0 && jobs.started == jobs.done {
+        if jobs.data.len() == 0 {
             // no new jobs was announced and all started jobs are done
             // worker thread must now finish gracefully
             None

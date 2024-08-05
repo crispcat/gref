@@ -2,11 +2,12 @@ mod lib;
 
 use crate::{
     lib::{
+        runtime::run,
         help::HELP,
         config::{
             Config,
             ConfigParsingResult::*,
-        }
+        },
     }
 };
 
@@ -15,7 +16,6 @@ use std::{
     process,
     error::Error
 };
-use crate::lib::runtime::run;
 
 fn main() {
 

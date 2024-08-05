@@ -41,7 +41,7 @@ enum RuntimeJob<'a> {
 struct Runtime<'a> {
     regex: Regex,
     config: Config,
-    jobs_chan: JobsChan<RuntimeJob<'a>>,
+    jobs: JobsChan<RuntimeJob<'a>>,
 }
 
 const DEFAULT_CHAN_CAPACITY: usize = 4096;
@@ -60,18 +60,17 @@ pub fn run(config: Config) -> Result<(), anyhow::Error> {
         .build();
 
     let regex = regex_build_result.map_err(|e| anyhow!("Regex parsing error: {e})"))?;
-    let jobs_chan = JobsChan::<RuntimeJob>::with_capacity(DEFAULT_CHAN_CAPACITY);
-    let runtime = Runtime { regex, config, jobs_chan };
-
-    for source in &runtime.config.sources {
-        runtime.jobs_chan.announce_one(ConsumeText(source));
-    }
+    let jobs = JobsChan::<RuntimeJob>::with_capacity(DEFAULT_CHAN_CAPACITY);
+    let runtime = Runtime { regex, config, jobs };
 
     std::thread::scope(|s| {
         for _ in 0..runtime.config.threads {
             s.spawn(|| worker_go(&runtime));
         }
-        runtime.jobs_chan.wait_for_all_done();
+        for source in &runtime.config.sources {
+            runtime.jobs.announce_one(ConsumeText(source));
+        }
+        runtime.jobs.wait_for_all_done();
     });
 
     Ok(())
@@ -79,8 +78,8 @@ pub fn run(config: Config) -> Result<(), anyhow::Error> {
 
 fn worker_go<'a>(runtime: &'a Runtime<'a>) {
     use RuntimeJob::*;
-    while let Some(job_handler) = runtime.jobs_chan.wait_for_one() {
-        let job_result = match job_handler.job() {
+    while let Some(handle) = runtime.jobs.wait_for_one() {
+        let job_result = match handle.job() {
             ConsumeText(source) => job_consume_text_source(source, runtime),
             Search(request) => job_search_in_string(request, runtime),
             Format(result) => job_format_result(result, runtime)
@@ -105,7 +104,7 @@ fn job_consume_text_source<'a>(source: &'a TextSource, runtime: &'a Runtime<'a>)
                     Ok(0) => break,
                     Ok(_bytes_read) => {
                         let job = Search(SearchRequest { haystack, source, line } );
-                        runtime.jobs_chan.announce_one(job);
+                        runtime.jobs.announce_one(job);
                     }
                     Err(e) => bail!("Failed to read string from source \"{source:?}\": {e}")
                 }
