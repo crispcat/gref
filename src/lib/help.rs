@@ -1,7 +1,7 @@
 pub const HELP: &str = "\n\
 GREF.\n\
 \n\
-A grep-like regular expressions \"global-search-and-FORMAT(not PRINT. greF. you get it)\" written in Rust as an educational project.\n\
+A grep-like \"global-search-and-FORMAT\" regular expressions search written in Rust as an educational project.\n\
 To read more about regex implementation used under the hood see: https://docs.rs/regex/latest/regex/\n\
 \n\
 SYNOPSIS:\n\
@@ -17,11 +17,11 @@ OPTIONS BRIEF:\n\
 \n\
 \t-h  -  Prints help\n\
 \t-e  -  Extract mode. Extract capture group matches. Group can be named like \"(?<name>.*)\" or simple indexed starting from 0. \n\
-\t       For example: -e \"message\" -e \"time\" will print both group matches each from new separate line sequentially.
+\t       For example: -e \"message\" -e \"time\" will print both group matches each from new line sequentially.
 \t       This is also forces -w mode. See: https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures.\n\
 \t-w  -  Show only exact match. You will forced to use something like \"^.*keyword.*$\" to imitate default line-showing behaviour.\n\
 \t-f  -  Format mode. Format output using capture groups. For example: -f \"{time}: {message}\". Multiply -f's behaves as -e's. You can mix-up.\n\
-\t       Group indexes are also allowed and starting from 0 like {0}. Format without extractions (-e) is also allowed. \n\
+\t       Group indexes are also allowed and starting from 0 like {0}. \n\
 \t-v  -  Verbose mode. Show source, line, offset and other useful information alongside search results.\n\
 \t-i  -  Case insensitive: Makes the regex match case insensitively.\n\
 \t-m  -  Multiline mode. Changes the behavior of ^ and $ to match the beginning and end of lines within the input text.\n\
@@ -33,6 +33,12 @@ OPTIONS BRIEF:\n\
 \t-p  -  Pass text as command line argument to search within.\n\
 \t-t  -  Do work in n-th threads. Default value is machine multithreading capability defined.
 \t-d  -  Debug mode.\n\
+\n\
+INTERACTIVE MODE:\n\
+\n\
+\tProvide search expression only to run gref in the interactive mode.\n\
+\tThen you can type or paste text directly into your terminal to search in.\n\
+\tSend EOF (default Ctrl+D) to end stdin stream and get stdout results.\n\
 \n\
 EXAMPLES:\n\
 \n\

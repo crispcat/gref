@@ -10,14 +10,16 @@ use regex::bytes::{
     RegexBuilder
 };
 
-use crate::lib::{
-    config::{
-        Config,
-        TextSource,
-    },
-    jobs::JobsChan,
+use crate::{
+    lib::{
+        config::{
+            Config,
+            TextSource,
+        },
+        jobs::JobsChan,
+        reader::text_reader_wrap
+    }
 };
-use crate::lib::reader::text_reader_wrap;
 
 pub struct SearchRequest<'a> {
     line: usize,
